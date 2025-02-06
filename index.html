@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Dynamic Morphing Object</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: black; }
+        canvas { display: block; }
+        .controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+        }
+        button {
+            margin: 5px;
+            padding: 10px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <button id="toggle">Toggle Shape</button>
+        <button id="randomize">Randomize</button>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Scene, Camera, Renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Geometries
+        function createMobiusGeometry() {
+            const geometry = new THREE.ParametricGeometry((u, v, target) => {
+                u = u * Math.PI * 2;
+                v = v * 2 - 1;
+                const x = Math.cos(u) * (1 + 0.5 * v * Math.cos(u / 2));
+                const y = Math.sin(u) * (1 + 0.5 * v * Math.cos(u / 2));
+                const z = 0.5 * v * Math.sin(u / 2);
+                target.set(x * 10, y * 10, z * 10);
+            }, 100, 30); // Increased facets here
+            return geometry;
+        }
+
+        function createTwistedTorusGeometry() {
+            return new THREE.TorusKnotGeometry(10, 3, 200, 40, 3, 5); // Increased details here
+        }
+
+        const geometries = [
+            new THREE.SphereGeometry(15, 64, 64),
+            new THREE.TorusGeometry(12, 4, 64, 128),
+            createMobiusGeometry(),  // Mobius with more facets
+            createTwistedTorusGeometry() // Twisted Torus with more details
+        ];
+
+        let currentGeometryIndex = 0;
+        let material = new THREE.MeshStandardMaterial({ wireframe: true, emissive: 0x00ff00, emissiveIntensity: 0.5 });
+        let shape = new THREE.Mesh(geometries[currentGeometryIndex], material);
+        scene.add(shape);
+
+        // Store Initial Positions
+        let initialPositions = new Float32Array(0);
+
+        function updateInitialPositions() {
+            const vertices = shape.geometry.attributes.position;
+            initialPositions = new Float32Array(vertices.array);
+        }
+
+        // Lighting
+        const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+        pointLight.position.set(10, 10, 20);
+        scene.add(pointLight);
+
+        camera.position.z = 40;
+
+        // Background Particles
+        const starsGeometry = new THREE.BufferGeometry();
+        const starVertices = [];
+        for (let i = 0; i < 600; i++) {
+            starVertices.push((Math.random() - 0.5) * 200, (Math.random() - 0.5) * 200, (Math.random() - 0.5) * 200);
+        }
+        starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+        const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5 });
+        const stars = new THREE.Points(starsGeometry, starsMaterial);
+        scene.add(stars);
+
+        // Audio Setup
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 512;
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+            });
+
+        // Toggle Shape Function
+        function toggleShape() {
+            currentGeometryIndex = (currentGeometryIndex + 1) % geometries.length;
+            shape.geometry.dispose();
+            shape.geometry = geometries[currentGeometryIndex];
+            updateInitialPositions();
+        }
+
+        // Randomize Shape Function
+        function randomizeShape() {
+            let newIndex;
+            do {
+                newIndex = Math.floor(Math.random() * geometries.length);
+            } while (newIndex === currentGeometryIndex);
+            currentGeometryIndex = newIndex;
+            shape.geometry.dispose();
+            shape.geometry = geometries[currentGeometryIndex];
+            updateInitialPositions();
+        }
+
+        document.getElementById('toggle').addEventListener('click', toggleShape);
+        document.getElementById('randomize').addEventListener('click', randomizeShape);
+
+        // Animation Loop
+        function animate() {
+            requestAnimationFrame(animate);
+            analyser.getByteFrequencyData(dataArray);
+            let avgAmplitude = dataArray.reduce((a, b) => a + b, 0) / bufferLength;
+            let scale = 1 + avgAmplitude / 200;
+            shape.scale.set(scale, scale, scale);
+
+            const dynamicColor = new THREE.Color(`hsl(${(avgAmplitude / 256) * 360}, 100%, 50%)`);
+            material.emissive.set(dynamicColor);
+
+            // Modify the vertices of the shape based on audio data
+            const vertices = shape.geometry.attributes.position;
+            for (let i = 0; i < vertices.count; i++) {
+                const amplitude = dataArray[i % bufferLength] / 256;
+                const offset = amplitude * 3; // Adjust sensitivity here
+                const x = initialPositions[i * 3];
+                const y = initialPositions[i * 3 + 1];
+                const z = initialPositions[i * 3 + 2];
+                const normal = new THREE.Vector3(x, y, z).normalize();
+                vertices.setXYZ(i, x + normal.x * offset, y + normal.y * offset, z + normal.z * offset);
+            }
+            vertices.needsUpdate = true;
+
+            shape.rotation.y += 0.002;
+            stars.rotation.y += 0.001;
+            renderer.render(scene, camera);
+        }
+
+        // Initial setup of positions for the first geometry
+        updateInitialPositions();
+
+        animate();
+    </script>
+</body>
+</html>
