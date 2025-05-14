@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audio-Reactive 3D Morphing Object</title>
+    <title>Neon Audio Reactor</title>
     <style>
         body { 
             margin: 0; 
             overflow: hidden; 
-            background: black;
-            font-family: Arial, sans-serif;
+            background: #000;
+            font-family: 'Arial', sans-serif;
         }
         canvas { 
             display: block; 
@@ -20,28 +20,35 @@
             left: 10px;
             z-index: 100;
             background: rgba(0,0,0,0.7);
-            padding: 10px;
-            border-radius: 5px;
+            padding: 15px;
+            border-radius: 8px;
             color: white;
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.2);
         }
         button {
             margin: 5px;
-            padding: 10px;
-            font-size: 16px;
-            background: #333;
-            color: white;
-            border: 1px solid #00ff00;
+            padding: 10px 15px;
+            font-size: 14px;
+            background: linear-gradient(45deg, #0f0, #0ff);
+            color: #000;
+            border: none;
             border-radius: 4px;
             cursor: pointer;
             transition: all 0.3s;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         button:hover {
-            background: #00aa00;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.7);
+            transform: translateY(-2px);
         }
         .status {
             margin-top: 10px;
-            font-size: 14px;
-            color: #ccc;
+            font-size: 12px;
+            color: #0ff;
+            text-shadow: 0 0 5px #0ff;
         }
         .loading {
             position: fixed;
@@ -49,59 +56,138 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: black;
+            background: #000;
             display: flex;
             justify-content: center;
             align-items: center;
             z-index: 1000;
-            color: white;
+            color: #0ff;
             font-size: 24px;
+            flex-direction: column;
         }
-        .intensity-control {
-            margin-top: 10px;
+        .loading::after {
+            content: "";
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(0, 255, 255, 0.2);
+            border-top-color: #0ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-top: 20px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .control-group {
+            margin: 10px 0;
         }
         label {
             display: block;
             margin-bottom: 5px;
+            color: #0ff;
+            font-size: 12px;
+            letter-spacing: 1px;
         }
         input[type="range"] {
             width: 100%;
+            -webkit-appearance: none;
+            height: 5px;
+            background: rgba(0, 255, 255, 0.2);
+            border-radius: 5px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 15px;
+            height: 15px;
+            background: #0ff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 5px #0ff;
         }
     </style>
 </head>
 <body>
     <div class="loading" id="loading">
-        Loading... Please allow microphone access when prompted
+        NEON AUDIO REACTOR
+        <div>Initializing holographic systems...</div>
     </div>
 
     <div class="controls">
-        <button id="toggle">Toggle Shape</button>
-        <button id="randomize">Randomize Shape</button>
-        <div class="intensity-control">
-            <label for="intensity">Audio Sensitivity:</label>
-            <input type="range" id="intensity" min="0.1" max="5" step="0.1" value="1">
+        <button id="toggle">Morph Shape</button>
+        <button id="randomize">Randomize</button>
+        
+        <div class="control-group">
+            <label for="intensity">Audio Sensitivity</label>
+            <input type="range" id="intensity" min="0.1" max="3" step="0.1" value="1.5">
         </div>
-        <div class="intensity-control">
-            <label for="rotation">Rotation Speed:</label>
-            <input type="range" id="rotation" min="0" max="0.01" step="0.0005" value="0.002">
+        
+        <div class="control-group">
+            <label for="rotation">Rotation Speed</label>
+            <input type="range" id="rotation" min="0" max="0.01" step="0.0005" value="0.003">
         </div>
-        <div class="status" id="status">Microphone: Waiting for access...</div>
+        
+        <div class="control-group">
+            <label for="bloom">Bloom Intensity</label>
+            <input type="range" id="bloom" min="0" max="2" step="0.1" value="1">
+        </div>
+        
+        <div class="status" id="status">System Status: Initializing...</div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    
     <script>
         // Loading screen
         const loadingScreen = document.getElementById('loading');
+        const statusElement = document.getElementById('status');
         
         // Scene setup
         const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.002);
+        
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 40;
+        
+        // Enhanced renderer with antialiasing
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        renderer.toneMappingExposure = 1.5;
         document.body.appendChild(renderer.domElement);
-
-        // Improved geometries with more options
+        
+        // Post-processing for bloom effect
+        let bloomPass, composer;
+        function initPostProcessing() {
+            const renderScene = new THREE.RenderPass(scene, camera);
+            
+            bloomPass = new THREE.UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                1.5, 0.4, 0.85
+            );
+            bloomPass.threshold = 0;
+            bloomPass.strength = 1;
+            bloomPass.radius = 0.5;
+            
+            composer = new THREE.EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+            
+            // Bloom intensity control
+            document.getElementById('bloom').addEventListener('input', (e) => {
+                bloomPass.strength = parseFloat(e.target.value);
+            });
+        }
+        
+        // Futuristic geometries
         const geometries = [
             new THREE.SphereGeometry(15, 128, 128),
             new THREE.TorusGeometry(12, 4, 64, 128),
@@ -111,7 +197,7 @@
             createMobiusGeometry(),
             createParametricHeartGeometry()
         ];
-
+        
         function createMobiusGeometry() {
             return new THREE.ParametricGeometry((u, v, target) => {
                 u = u * Math.PI * 2;
@@ -122,7 +208,7 @@
                 target.set(x * 10, y * 10, z * 10);
             }, 150, 50);
         }
-
+        
         function createParametricHeartGeometry() {
             return new THREE.ParametricGeometry((u, v, target) => {
                 u = u * Math.PI * 2;
@@ -133,141 +219,147 @@
                 target.set(x * 0.8, y * 0.8, z);
             }, 100, 50);
         }
-
+        
         let currentGeometryIndex = 0;
         const material = new THREE.MeshStandardMaterial({ 
-            wireframe: true, 
-            emissive: 0x00ff00, 
+            wireframe: false,
+            transparent: true,
+            opacity: 0.95,
+            emissive: 0x00ffff,
             emissiveIntensity: 0.5,
-            roughness: 0.8,
-            metalness: 0.2
+            roughness: 0.1,
+            metalness: 0.9,
+            side: THREE.DoubleSide,
+            envMapIntensity: 1
         });
         
         let shape = new THREE.Mesh(geometries[currentGeometryIndex], material);
         scene.add(shape);
-
+        
         // Store Initial Positions
         let initialPositions = new Float32Array(0);
         let initialNormals = new Float32Array(0);
-
+        
         function updateInitialPositions() {
             const vertices = shape.geometry.attributes.position;
             const normals = shape.geometry.attributes.normal || computeNormals(shape.geometry);
             initialPositions = new Float32Array(vertices.array);
             initialNormals = new Float32Array(normals.array);
         }
-
+        
         function computeNormals(geometry) {
             geometry.computeVertexNormals();
             return geometry.attributes.normal;
         }
-
+        
         // Enhanced lighting
-        const ambientLight = new THREE.AmbientLight(0x404040);
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
         scene.add(ambientLight);
-
-        const pointLight = new THREE.PointLight(0xffffff, 1, 100);
-        pointLight.position.set(10, 10, 20);
-        scene.add(pointLight);
-
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        
+        const pointLight1 = new THREE.PointLight(0xff00ff, 1, 100);
+        pointLight1.position.set(20, 20, 20);
+        scene.add(pointLight1);
+        
+        const pointLight2 = new THREE.PointLight(0x00ffff, 1, 100);
+        pointLight2.position.set(-20, -20, -20);
+        scene.add(pointLight2);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
         directionalLight.position.set(0, 1, 1);
         scene.add(directionalLight);
-
-        camera.position.z = 40;
-
-        // Improved starfield with more stars and twinkling effect
-        const starsGeometry = new THREE.BufferGeometry();
-        const starVertices = [];
-        const starSizes = [];
-        const starAlphas = [];
         
-        for (let i = 0; i < 2000; i++) {
-            starVertices.push(
-                (Math.random() - 0.5) * 2000,
-                (Math.random() - 0.5) * 2000,
-                (Math.random() - 0.5) * 2000
-            );
-            starSizes.push(Math.random() * 1.5);
-            starAlphas.push(Math.random() * 0.8 + 0.2);
+        // Holographic grid floor
+        const gridHelper = new THREE.GridHelper(200, 50, 0x00ffff, 0x00ffff);
+        gridHelper.position.y = -20;
+        gridHelper.material.opacity = 0.2;
+        gridHelper.material.transparent = true;
+        scene.add(gridHelper);
+        
+        // Energy particles
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particlesCount = 2000;
+        const posArray = new Float32Array(particlesCount * 3);
+        
+        for(let i = 0; i < particlesCount * 3; i++) {
+            posArray[i] = (Math.random() - 0.5) * 100;
         }
         
-        starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
-        const starsMaterial = new THREE.PointsMaterial({ 
-            color: 0xffffff, 
-            size: 0.5,
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        
+        const particlesMaterial = new THREE.PointsMaterial({
+            size: 0.1,
+            color: 0x00ffff,
             transparent: true,
-            opacity: 1,
-            sizeAttenuation: true
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending
         });
         
-        starsMaterial.onBeforeCompile = (shader) => {
-            shader.vertexShader = shader.vertexShader.replace(
-                'void main() {',
-                `
-                attribute float size;
-                attribute float alpha;
-                varying float vAlpha;
-                void main() {
-                    vAlpha = alpha;
-                `
-            );
-            shader.fragmentShader = shader.fragmentShader.replace(
-                'void main() {',
-                `
-                varying float vAlpha;
-                void main() {
-                    gl_FragColor = vec4(1.0, 1.0, 1.0, vAlpha);
-                `
-            );
-        };
+        const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
+        scene.add(particlesMesh);
         
-        starsGeometry.setAttribute('size', new THREE.Float32BufferAttribute(starSizes, 1));
-        starsGeometry.setAttribute('alpha', new THREE.Float32BufferAttribute(starAlphas, 1));
+        // Laser beams
+        const laserGeometry = new THREE.BufferGeometry();
+        const laserCount = 8;
+        const laserPositions = new Float32Array(laserCount * 3 * 2);
         
-        const stars = new THREE.Points(starsGeometry, starsMaterial);
-        scene.add(stars);
-
+        for(let i = 0; i < laserCount; i++) {
+            const angle = (i / laserCount) * Math.PI * 2;
+            const radius = 30;
+            const x = Math.cos(angle) * radius;
+            const y = Math.sin(angle) * radius;
+            
+            laserPositions[i * 6] = x;
+            laserPositions[i * 6 + 1] = y;
+            laserPositions[i * 6 + 2] = 0;
+            
+            laserPositions[i * 6 + 3] = x * 5;
+            laserPositions[i * 6 + 4] = y * 5;
+            laserPositions[i * 6 + 5] = -50;
+        }
+        
+        laserGeometry.setAttribute('position', new THREE.BufferAttribute(laserPositions, 3));
+        
+        const laserMaterial = new THREE.LineBasicMaterial({
+            color: 0x00ffff,
+            transparent: true,
+            opacity: 0.5,
+            linewidth: 2
+        });
+        
+        const lasers = new THREE.LineSegments(laserGeometry, laserMaterial);
+        scene.add(lasers);
+        
         // Audio Setup with error handling
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         let analyser, dataArray;
         let audioStream;
         let isAudioActive = false;
-        const statusElement = document.getElementById('status');
-
+        
         function initAudio() {
             analyser = audioContext.createAnalyser();
             analyser.fftSize = 1024;
             const bufferLength = analyser.frequencyBinCount;
             dataArray = new Uint8Array(bufferLength);
-
+            
             navigator.mediaDevices.getUserMedia({ audio: true, video: false })
                 .then(handleAudioSuccess)
                 .catch(handleAudioError);
         }
-
+        
         function handleAudioSuccess(stream) {
             audioStream = stream;
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(analyser);
             isAudioActive = true;
-            statusElement.textContent = "Microphone: Active";
+            statusElement.textContent = "System Status: Audio Active";
             statusElement.style.color = "#00ff00";
             loadingScreen.style.display = 'none';
-            
-            // Start with a small delay to ensure audio is processing
-            setTimeout(() => {
-                if (!isAudioActive) {
-                    statusElement.textContent = "Microphone: No audio detected";
-                    statusElement.style.color = "#ff9900";
-                }
-            }, 2000);
         }
-
+        
         function handleAudioError(error) {
             console.error('Audio error:', error);
-            statusElement.textContent = "Microphone: Access denied - using simulated audio";
-            statusElement.style.color = "#ff0000";
+            statusElement.textContent = "System Status: Audio Disabled - Using Simulation";
+            statusElement.style.color = "#ff9900";
             isAudioActive = false;
             loadingScreen.style.display = 'none';
             
@@ -283,29 +375,29 @@
                 }
             }, 50);
         }
-
+        
         // Controls
         const intensityControl = document.getElementById('intensity');
         const rotationControl = document.getElementById('rotation');
-        let audioIntensity = 1;
-        let rotationSpeed = 0.002;
-
+        let audioIntensity = 1.5;
+        let rotationSpeed = 0.003;
+        
         intensityControl.addEventListener('input', (e) => {
             audioIntensity = parseFloat(e.target.value);
         });
-
+        
         rotationControl.addEventListener('input', (e) => {
             rotationSpeed = parseFloat(e.target.value);
         });
-
+        
         document.getElementById('toggle').addEventListener('click', toggleShape);
         document.getElementById('randomize').addEventListener('click', randomizeShape);
-
+        
         function toggleShape() {
             currentGeometryIndex = (currentGeometryIndex + 1) % geometries.length;
             updateShape();
         }
-
+        
         function randomizeShape() {
             let newIndex;
             do {
@@ -314,7 +406,7 @@
             currentGeometryIndex = newIndex;
             updateShape();
         }
-
+        
         function updateShape() {
             const oldShape = shape;
             shape = new THREE.Mesh(geometries[currentGeometryIndex], material);
@@ -323,11 +415,16 @@
             oldShape.geometry.dispose();
             updateInitialPositions();
         }
-
+        
         // Animation variables
         let lastTime = 0;
         const smoothAmplitude = { value: 0 };
-
+        
+        // Camera movement variables
+        let cameraAngle = 0;
+        let baseCameraZ = 40;
+        let targetCameraZ = 40;
+        
         // Animation Loop
         function animate(time) {
             requestAnimationFrame(animate);
@@ -354,7 +451,8 @@
             shape.scale.set(scale, scale, scale);
             
             // Dynamic color based on audio
-            const dynamicColor = new THREE.Color(`hsl(${(smoothAmplitude.value / 256) * 360}, 100%, 50%)`);
+            const hue = (time * 0.01 + smoothAmplitude.value / 10) % 360;
+            const dynamicColor = new THREE.Color(`hsl(${hue}, 100%, 50%)`);
             material.emissive.set(dynamicColor);
             material.emissiveIntensity = smoothAmplitude.value / 200 * 0.5;
             
@@ -388,31 +486,53 @@
                 vertices.needsUpdate = true;
             }
             
+            // Holographic grid animation
+            gridHelper.position.y = -20 + Math.sin(time * 0.001) * 2;
+            gridHelper.material.opacity = 0.2 + (smoothAmplitude.value / 500);
+            
+            // Particles animation
+            particlesMesh.rotation.x = time * 0.0001;
+            particlesMesh.rotation.y = time * 0.0002;
+            
+            // Lasers animation
+            lasers.rotation.z = time * 0.0005;
+            lasers.material.opacity = 0.3 + (smoothAmplitude.value / 400);
+            
+            // Camera movement
+            cameraAngle += 0.0005;
+            camera.position.x = Math.sin(cameraAngle) * 30;
+            camera.position.z = Math.cos(cameraAngle) * 30;
+            camera.position.y = Math.sin(cameraAngle * 0.5) * 10;
+            
+            // Occasional camera zooms based on audio
+            if (smoothAmplitude.value > 150 && Math.random() < 0.05) {
+                targetCameraZ = 20 + Math.random() * 10;
+            } else {
+                targetCameraZ = 30 + Math.random() * 20;
+            }
+            
+            baseCameraZ += (targetCameraZ - baseCameraZ) * 0.05;
+            camera.position.normalize().multiplyScalar(baseCameraZ);
+            camera.lookAt(0, 0, 0);
+            
             // Rotation
             shape.rotation.y += rotationSpeed;
             shape.rotation.x += rotationSpeed * 0.3;
             
-            // Starfield animation
-            stars.rotation.y += rotationSpeed * 0.1;
-            
-            // Twinkling stars
-            const starAlphasAttr = starsGeometry.attributes.alpha;
-            for (let i = 0; i < starAlphasAttr.count; i++) {
-                starAlphasAttr.setX(i, (Math.sin(time * 0.001 + i) * 0.4 + 0.5));
-            }
-            starAlphasAttr.needsUpdate = true;
-            
-            renderer.render(scene, camera);
+            // Render with post-processing
+            composer.render();
         }
-
+        
         // Handle window resize
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
         });
-
+        
         // Initialize
+        initPostProcessing();
         updateInitialPositions();
         initAudio();
         animate(0);
